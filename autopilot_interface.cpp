@@ -71,6 +71,114 @@ get_time_usec()
 //   Setpoint Helper Functions
 // ----------------------------------------------------------------------------------
 
+void request_stream() {
+    mavlink_message_t msg;
+    uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+
+    // STREAMS that can be requested
+    /*
+     * Definitions are in common.h: enum MAV_DATA_STREAM
+     *
+     * MAV_DATA_STREAM_ALL=0, // Enable all data streams
+     * MAV_DATA_STREAM_RAW_SENSORS=1, /* Enable IMU_RAW, GPS_RAW, GPS_STATUS packets.
+     * MAV_DATA_STREAM_EXTENDED_STATUS=2, /* Enable GPS_STATUS, CONTROL_STATUS, AUX_STATUS
+     * MAV_DATA_STREAM_RC_CHANNELS=3, /* Enable RC_CHANNELS_SCALED, RC_CHANNELS_RAW, SERVO_OUTPUT_RAW
+     * MAV_DATA_STREAM_RAW_CONTROLLER=4, /* Enable ATTITUDE_CONTROLLER_OUTPUT, POSITION_CONTROLLER_OUTPUT, NAV_CONTROLLER_OUTPUT.
+     * MAV_DATA_STREAM_POSITION=6, /* Enable LOCAL_POSITION, GLOBAL_POSITION/GLOBAL_POSITION_INT messages.
+     * MAV_DATA_STREAM_EXTRA1=10, /* Dependent on the autopilot
+     * MAV_DATA_STREAM_EXTRA2=11, /* Dependent on the autopilot
+     * MAV_DATA_STREAM_EXTRA3=12, /* Dependent on the autopilot
+     * MAV_DATA_STREAM_ENUM_END=13,
+     *
+     * Data in PixHawk available in:
+     *  - Battery, amperage and voltage (SYS_STATUS) in MAV_DATA_STREAM_EXTENDED_STATUS
+     *  - Gyro info (IMU_SCALED) in MAV_DATA_STREAM_EXTRA1
+     */
+
+    // To be setup according to the needed information to be requested from the Pixhawk
+    const int  maxStreams = 2;
+    const uint8_t MAVStreams[maxStreams] = {MAV_DATA_STREAM_EXTENDED_STATUS, MAV_DATA_STREAM_EXTRA1};
+    const uint16_t MAVRates[maxStreams] = {0x02,0x05};
+
+    for (int i=0; i < maxStreams; i++) {
+        /*
+         * mavlink_msg_request_data_stream_pack(system_id, component_id,
+         *    &msg,
+         *    target_system, target_component,
+         *    MAV_DATA_STREAM_POSITION, 10000000, 1);
+         *
+         * mavlink_msg_request_data_stream_pack(uint8_t system_id, uint8_t component_id,
+         *    mavlink_message_t* msg,
+         *    uint8_t target_system, uint8_t target_component, uint8_t req_stream_id,
+         *    uint16_t req_message_rate, uint8_t start_stop)
+         *
+         */
+        mavlink_msg_request_data_stream_pack(2, 200, &msg, 1, 0, MAVStreams[i], MAVRates[i], 1);
+//        uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+//        Serial.write(buf, len);
+
+
+
+    }
+
+
+    // Prepare command for off-board mode
+
+    // Done!
+}
+
+void Autopilot_Interface::send_beacon_pos() {
+
+    mavlink_landing_target_t lt;
+
+    lt.time_usec = (uint32_t) (get_time_usec() / 1000);
+    lt.target_num = 0;
+    lt.frame = MAV_FRAME_LOCAL_NED;
+    lt.distance = 10;
+    lt.angle_x = 1;
+    lt.angle_y = 1;
+    lt.type = LANDING_TARGET_TYPE_VISION_OTHER;
+
+    lt.position_valid = 1;
+
+    mavlink_message_t message;
+    mavlink_msg_landing_target_encode(system_id, companion_id, &message, &lt);
+
+
+    // --------------------------------------------------------------------------
+    //   WRITE
+    // --------------------------------------------------------------------------
+
+    // do the write
+    int len = write_message(message);
+
+    // check the write
+    if ( len <= 0 )
+        fprintf(stderr,"WARNING: could not send LANDING_TARGET \n");
+    	else
+    		printf("%lu LANDING_TARGET  = [ %f , x ang: %f , y ang: %f, dist: %f ] \n", write_count, position_target.x, position_target.y, position_target.z);
+
+    return;
+}
+
+void Autopilot_Interface::request_mavlink_rates() {
+    const int maxStreams = 4;
+    int len = 0;
+    const uint8_t MAVStreams[maxStreams] = {
+                                            MAV_DATA_STREAM_EXTENDED_STATUS,
+                                            MAV_DATA_STREAM_POSITION,
+                                            MAV_DATA_STREAM_EXTRA1,
+                                            MAV_DATA_STREAM_EXTRA2};
+    const uint16_t MAVRates[maxStreams] = {0x02, 0x05, 0x02, 0x02};
+    for (int i=0; i < maxStreams; i++) {
+        mavlink_message_t msg;
+        mavlink_msg_request_data_stream_pack(system_id, companion_id, &msg, 1, 0, MAVStreams[i], MAVRates[i], 1);
+//        len += port->write_message(msg);
+    }
+}
+
+
+
 // choose one of the next three
 
 /*
@@ -200,9 +308,9 @@ Autopilot_Interface(Generic_Port *port_)
 	read_tid  = 0; // read thread id
 	write_tid = 0; // write thread id
 
-	system_id    = 0; // system id
+	system_id    = 1; // system id
 	autopilot_id = 0; // autopilot component id
-	companion_id = 0; // companion computer component id
+	companion_id = 2; // companion computer component id
 
 	current_messages.sysid  = system_id;
 	current_messages.compid = autopilot_id;
@@ -265,7 +373,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_HEARTBEAT:
 				{
-					//printf("MAVLINK_MSG_ID_HEARTBEAT\n");
+					printf("MAVLINK_MSG_ID_HEARTBEAT\n");
 					mavlink_msg_heartbeat_decode(&message, &(current_messages.heartbeat));
 					current_messages.time_stamps.heartbeat = get_time_usec();
 					this_timestamps.heartbeat = current_messages.time_stamps.heartbeat;
@@ -274,7 +382,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_SYS_STATUS:
 				{
-					//printf("MAVLINK_MSG_ID_SYS_STATUS\n");
+					printf("MAVLINK_MSG_ID_SYS_STATUS\n");
 					mavlink_msg_sys_status_decode(&message, &(current_messages.sys_status));
 					current_messages.time_stamps.sys_status = get_time_usec();
 					this_timestamps.sys_status = current_messages.time_stamps.sys_status;
@@ -283,7 +391,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_BATTERY_STATUS:
 				{
-					//printf("MAVLINK_MSG_ID_BATTERY_STATUS\n");
+					printf("MAVLINK_MSG_ID_BATTERY_STATUS\n");
 					mavlink_msg_battery_status_decode(&message, &(current_messages.battery_status));
 					current_messages.time_stamps.battery_status = get_time_usec();
 					this_timestamps.battery_status = current_messages.time_stamps.battery_status;
@@ -292,7 +400,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_RADIO_STATUS:
 				{
-					//printf("MAVLINK_MSG_ID_RADIO_STATUS\n");
+					printf("MAVLINK_MSG_ID_RADIO_STATUS\n");
 					mavlink_msg_radio_status_decode(&message, &(current_messages.radio_status));
 					current_messages.time_stamps.radio_status = get_time_usec();
 					this_timestamps.radio_status = current_messages.time_stamps.radio_status;
@@ -301,7 +409,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_LOCAL_POSITION_NED:
 				{
-					//printf("MAVLINK_MSG_ID_LOCAL_POSITION_NED\n");
+					printf("MAVLINK_MSG_ID_LOCAL_POSITION_NED\n");
 					mavlink_msg_local_position_ned_decode(&message, &(current_messages.local_position_ned));
 					current_messages.time_stamps.local_position_ned = get_time_usec();
 					this_timestamps.local_position_ned = current_messages.time_stamps.local_position_ned;
@@ -310,7 +418,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
 				{
-					//printf("MAVLINK_MSG_ID_GLOBAL_POSITION_INT\n");
+					printf("MAVLINK_MSG_ID_GLOBAL_POSITION_INT\n");
 					mavlink_msg_global_position_int_decode(&message, &(current_messages.global_position_int));
 					current_messages.time_stamps.global_position_int = get_time_usec();
 					this_timestamps.global_position_int = current_messages.time_stamps.global_position_int;
@@ -319,7 +427,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED:
 				{
-					//printf("MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED\n");
+					printf("MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED\n");
 					mavlink_msg_position_target_local_ned_decode(&message, &(current_messages.position_target_local_ned));
 					current_messages.time_stamps.position_target_local_ned = get_time_usec();
 					this_timestamps.position_target_local_ned = current_messages.time_stamps.position_target_local_ned;
@@ -328,7 +436,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_POSITION_TARGET_GLOBAL_INT:
 				{
-					//printf("MAVLINK_MSG_ID_POSITION_TARGET_GLOBAL_INT\n");
+					printf("MAVLINK_MSG_ID_POSITION_TARGET_GLOBAL_INT\n");
 					mavlink_msg_position_target_global_int_decode(&message, &(current_messages.position_target_global_int));
 					current_messages.time_stamps.position_target_global_int = get_time_usec();
 					this_timestamps.position_target_global_int = current_messages.time_stamps.position_target_global_int;
@@ -337,7 +445,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_HIGHRES_IMU:
 				{
-					//printf("MAVLINK_MSG_ID_HIGHRES_IMU\n");
+					printf("MAVLINK_MSG_ID_HIGHRES_IMU\n");
 					mavlink_msg_highres_imu_decode(&message, &(current_messages.highres_imu));
 					current_messages.time_stamps.highres_imu = get_time_usec();
 					this_timestamps.highres_imu = current_messages.time_stamps.highres_imu;
@@ -346,16 +454,24 @@ read_messages()
 
 				case MAVLINK_MSG_ID_ATTITUDE:
 				{
-					//printf("MAVLINK_MSG_ID_ATTITUDE\n");
+					printf("MAVLINK_MSG_ID_ATTITUDE\n");
 					mavlink_msg_attitude_decode(&message, &(current_messages.attitude));
 					current_messages.time_stamps.attitude = get_time_usec();
 					this_timestamps.attitude = current_messages.time_stamps.attitude;
 					break;
 				}
 
+			    case MAVLINK_MSG_ID_SYSTEM_TIME:
+                    printf("MAVLINK_MSG_ID_SYSTEM_TIME\n");
+                    mavlink_msg_system_time_decode(&message, &(current_messages.system_time));
+                    this_timestamps.system_time = current_messages.time_stamps.system_time;
+                    break;
+
+
+
 				default:
 				{
-					// printf("Warning, did not handle message id %i\n",message.msgid);
+					 printf("Warning, did not handle message id %i\n",message.msgid);
 					break;
 				}
 
@@ -585,6 +701,50 @@ toggle_offboard_control( bool flag )
 
 	// Done!
 	return len;
+}
+
+int Autopilot_Interface::set_mode( int mode ) {
+    printf("set mode %d\n", mode);
+
+    // Prepare command for off-board mode
+    mavlink_command_long_t com = { 0 };
+    com.target_system    = system_id;
+    com.target_component = autopilot_id;
+    com.command          = MAV_CMD_DO_SET_MODE;
+    com.confirmation     = true;
+    com.param1           = mode;
+
+    // Encode
+    mavlink_message_t message;
+    mavlink_msg_command_long_encode(system_id, companion_id, &message, &com);
+
+    // Send the message
+    int len = port->write_message(message);
+
+    // Done!
+    return len;
+}
+
+int Autopilot_Interface::takeoff( int altitude ) {
+    printf("TAKEOFF, initial velocity %d\n", altitude);
+
+    // Prepare command for off-board mode
+    mavlink_command_long_t com = { 0 };
+    com.target_system    = system_id;
+    com.target_component = autopilot_id;
+    com.command          = MAV_CMD_NAV_TAKEOFF;
+    com.confirmation     = true;
+    com.param7           = altitude;
+
+    // Encode
+    mavlink_message_t message;
+    mavlink_msg_command_long_encode(system_id, companion_id, &message, &com);
+
+    // Send the message
+    int len = port->write_message(message);
+
+    // Done!
+    return len;
 }
 
 

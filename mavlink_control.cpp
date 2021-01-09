@@ -54,6 +54,16 @@
 // ------------------------------------------------------------------------------
 
 #include "mavlink_control.h"
+#include "autopilot_interface.h"
+#include <common/common.h>
+
+
+void test_takeoff(Autopilot_Interface &api) {
+    api.takeoff(600.0);
+
+    sleep(10);
+}
+
 
 
 // ------------------------------------------------------------------------------
@@ -77,7 +87,7 @@ top (int argc, char **argv)
 
 	bool use_udp = false;
 	char *udp_ip = (char*)"127.0.0.1";
-	int udp_port = 14540;
+	int udp_port = 14550;
 	bool autotakeoff = false;
 
 	// do the parse, will throw an int if it fails
@@ -153,8 +163,20 @@ top (int argc, char **argv)
 	/*
 	 * Now we can implement the algorithm we want on top of the autopilot interface
 	 */
-	commands(autopilot_interface, autotakeoff);
+//	test_takeoff(autopilot_interface);
 
+//	commands(autopilot_interface, autotakeoff);
+    autopilot_interface.request_mavlink_rates();
+
+
+    sleep(20);
+
+    for (int i =0; i < 10; i++) {
+
+        autopilot_interface.send_beacon_pos();
+
+        usleep(100000);
+    }
 
 	// --------------------------------------------------------------------------
 	//   THREAD and PORT SHUTDOWN
@@ -189,15 +211,21 @@ commands(Autopilot_Interface &api, bool autotakeoff)
 	// --------------------------------------------------------------------------
 	//   START OFFBOARD MODE
 	// --------------------------------------------------------------------------
-
+#ifdef PX4
 	api.enable_offboard_control();
 	usleep(100); // give some time to let it sink in
-
+#endif
 	// now the autopilot is accepting setpoint commands
 
 	if(autotakeoff)
 	{
+//	    printf("setting mode GUIDED");
+	    api.set_mode(MAV_MODE_GUIDED_DISARMED);
+//	    usleep(100);
+
+	    printf("TAKE OFF ENABLED, arming\n");
 		// arm autopilot
+		//bzd tymczasowo wylaczone
 		api.arm_disarm(true);
 		usleep(100); // give some time to let it sink in
 	}
@@ -215,7 +243,7 @@ commands(Autopilot_Interface &api, bool autotakeoff)
 
 
 
-
+#ifdef PX4
 	// Example 1 - Fly up by to 2m
 	set_position( ip.x ,       // [m]
 			 	  ip.y ,       // [m]
@@ -229,7 +257,16 @@ commands(Autopilot_Interface &api, bool autotakeoff)
 
 	// SEND THE COMMAND
 	api.update_setpoint(sp);
+
 	// NOW pixhawk will try to move
+#endif
+
+#ifdef ARDUPILOT
+    sleep(1);
+    //takeoff to 2m
+    api.takeoff(6.0);
+    sleep(5);
+#endif
 
 	// Wait for 8 seconds, check position
 	for (int i=0; i < 8; i++)
@@ -277,7 +314,7 @@ commands(Autopilot_Interface &api, bool autotakeoff)
 		// NOW pixhawk will try to move
 
 		// Wait for 8 seconds, check position
-		for (int i=0; i < 8; i++)
+		for (int i=0; i < 12; i++)
 		{
 			mavlink_local_position_ned_t pos = api.current_messages.local_position_ned;
 			printf("%i CURRENT POSITION XYZ = [ % .4f , % .4f , % .4f ] \n", i, pos.x, pos.y, pos.z);

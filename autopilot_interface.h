@@ -117,6 +117,8 @@
 #define MAVLINK_MSG_SET_POSITION_TARGET_LOCAL_NED_LOITER       0x3000
 #define MAVLINK_MSG_SET_POSITION_TARGET_LOCAL_NED_IDLE         0x4000
 
+#define MAVLINK_COMMAND_TAKEOFF = MAV_CMD_NAV_TAKEOFF;
+
 // ------------------------------------------------------------------------------
 //   Prototypes
 // ------------------------------------------------------------------------------
@@ -155,6 +157,7 @@ struct Time_Stamps
 	uint64_t position_target_global_int;
 	uint64_t highres_imu;
 	uint64_t attitude;
+	uint64_t system_time;
 
 	void
 	reset_timestamps()
@@ -169,6 +172,7 @@ struct Time_Stamps
 		position_target_global_int = 0;
 		highres_imu = 0;
 		attitude = 0;
+		system_time = 0;
 	}
 
 };
@@ -210,6 +214,9 @@ struct Mavlink_Messages {
 
 	// Attitude
 	mavlink_attitude_t attitude;
+
+	// sytem time
+	mavlink_system_time_t system_time;
 
 	// System Parameters?
 
@@ -254,7 +261,7 @@ public:
 
 	char reading_status;
 	char writing_status;
-	char control_status;
+    char control_status;
     uint64_t write_count;
 
     int system_id;
@@ -268,7 +275,12 @@ public:
 	void read_messages();
 	int  write_message(mavlink_message_t message);
 
+	void send_beacon_pos();
+
+    void request_mavlink_rates();
 	int	 arm_disarm( bool flag );
+    int set_mode(int mode);
+    int takeoff(int altitude) ;
 	void enable_offboard_control();
 	void disable_offboard_control();
 
@@ -299,7 +311,7 @@ private:
 	void write_thread(void);
 
 	int toggle_offboard_control( bool flag );
-	void write_setpoint();
+    void write_setpoint();
 
 };
 
