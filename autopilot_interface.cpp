@@ -53,7 +53,7 @@
 // ------------------------------------------------------------------------------
 
 #include "autopilot_interface.h"
-
+#include <math.h>
 
 // ----------------------------------------------------------------------------------
 //   Time
@@ -131,10 +131,47 @@ void Autopilot_Interface::send_beacon_pos() {
 
     mavlink_landing_target_t lt;
 
+    //older than 2 sec
+
+    uint64_t ts = get_time_usec();
+    if (ts - current_messages.time_stamps.global_position_int > 5 * 1000000) {
+        return;
+    }
+
+
+    //alt is in mm
+    float alt_m = current_messages.global_position_int.relative_alt * 0.001;
+
+    //altitude out of scope
+    if (alt_m > MAX_PROCESS_ALT_AGL) {
+        return;
+    }
+
+    double current_lat = current_messages.global_position_int.lat * 0.0000001;
+    double current_lon = current_messages.global_position_int.lon * 0.0000001;
+    std::array<double, 2> cartesianPosition = wgs84::toCartesian({52.337358, 21.112818} /* reference position */,
+                                                                 {current_lat, current_lon} /* position to be converted */);
+
+    double x_rel_pos_ned_m = cartesianPosition[0];
+    double y_rel_pos_ned_m = cartesianPosition[1];
+
+    //TODO if lat is S and/or lon is W consider sign
+    float angle_x_rad = atan(x_rel_pos_ned_m / alt_m);
+    float angle_y_rad = atan(y_rel_pos_ned_m / alt_m);
+
+    float angle_x_deg = angle_x_rad * 180 / M_PI;
+    float angle_y_deg = angle_y_rad * 180 / M_PI;
+
+    float xx = current_messages.local_position_ned.x;
+    float yy = current_messages.local_position_ned.y;
+    float zz = current_messages.local_position_ned.z;
+
     lt.time_usec = (uint32_t) (get_time_usec() / 1000);
     lt.target_num = 0;
     lt.frame = MAV_FRAME_LOCAL_NED;
-    lt.distance = 10;
+    //TODO calculate
+    float dist = alt_m;
+    lt.distance = dist;
     lt.angle_x = 1;
     lt.angle_y = 1;
     lt.type = LANDING_TARGET_TYPE_VISION_OTHER;
@@ -156,7 +193,7 @@ void Autopilot_Interface::send_beacon_pos() {
     if ( len <= 0 )
         fprintf(stderr,"WARNING: could not send LANDING_TARGET \n");
     	else
-    		printf("%lu LANDING_TARGET  = [ %f , x ang: %f , y ang: %f, dist: %f ] \n", write_count, position_target.x, position_target.y, position_target.z);
+    		printf("%lu LANDING_TARGET  = [ %f , x ang: %f , y ang: %f, dist: %f ] \n", write_count, angle_x_deg, angle_y_deg, lt.distance);
 
     return;
 }
@@ -176,8 +213,6 @@ void Autopilot_Interface::request_mavlink_rates() {
 //        len += port->write_message(msg);
     }
 }
-
-
 
 // choose one of the next three
 

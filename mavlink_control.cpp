@@ -56,7 +56,7 @@
 #include "mavlink_control.h"
 #include "autopilot_interface.h"
 #include <common/common.h>
-
+#include "WGS84toCartesian.hpp"
 
 void test_takeoff(Autopilot_Interface &api) {
     api.takeoff(600.0);
@@ -169,13 +169,14 @@ top (int argc, char **argv)
     autopilot_interface.request_mavlink_rates();
 
 
-    sleep(20);
+    sleep(10);
 
-    for (int i =0; i < 10; i++) {
+    for (int i =0; i < 100; i++) {
 
         autopilot_interface.send_beacon_pos();
 
-        usleep(100000);
+        sleep(1);
+//        usleep(100000);
     }
 
 	// --------------------------------------------------------------------------
@@ -487,6 +488,13 @@ quit_handler( int sig )
 int
 main(int argc, char **argv)
 {
+    //MARKI
+    //52.33735899999999,21.112818000000004,112.0
+
+    std::array<double, 2> cartesianPosition = wgs84::toCartesian({52.337358,21.112818} /* reference position */, {52.337254, 21.112676} /* position to be converted */);
+
+    printf("Position: %f, %f\n", cartesianPosition[0], cartesianPosition[1]);
+
 	// This program uses throw, wrap one big try/catch here
 	try
 	{

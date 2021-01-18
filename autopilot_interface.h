@@ -56,6 +56,7 @@
 // ------------------------------------------------------------------------------
 
 #include "generic_port.h"
+#include "WGS84toCartesian.hpp"
 
 #include <signal.h>
 #include <time.h>
@@ -123,6 +124,8 @@
 //   Prototypes
 // ------------------------------------------------------------------------------
 
+
+static const int MAX_PROCESS_ALT_AGL = 31;
 
 // helper functions
 uint64_t get_time_usec();
