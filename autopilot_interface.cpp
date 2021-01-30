@@ -54,6 +54,11 @@
 
 #include "autopilot_interface.h"
 #include <math.h>
+//#include "AP_Math/AP_Math.h"
+//#include "AP_Math/matrix3.h"
+#include "AP_Math/definitions.h"
+#include "AP_Math/matrix3.h"
+#include "AP_Common.h"
 
 // ----------------------------------------------------------------------------------
 //   Time
@@ -135,9 +140,14 @@ void Autopilot_Interface::send_beacon_pos() {
 
     uint64_t ts = get_time_usec();
     if (ts - current_messages.time_stamps.global_position_int > 5 * 1000000) {
+        fprintf(stderr, "Global position is too old\n");
         return;
     }
 
+    if (ts - current_messages.time_stamps.attitude > 5 * 1000000) {
+        fprintf(stderr, "Attitude is too old\n");
+        return;
+    }
 
     //alt is in mm
     float alt_m = current_messages.global_position_int.relative_alt * 0.001;
@@ -146,34 +156,60 @@ void Autopilot_Interface::send_beacon_pos() {
     if (alt_m > MAX_PROCESS_ALT_AGL) {
         return;
     }
-
+//sim_vehicle.py -v ArduCopter -D -j 4 -L Marki --console --map --osdmsp
+//    52.33728403 21.11258521
     double current_lat = current_messages.global_position_int.lat * 0.0000001;
     double current_lon = current_messages.global_position_int.lon * 0.0000001;
-    std::array<double, 2> cartesianPosition = wgs84::toCartesian({52.337358, 21.112818} /* reference position */,
-                                                                 {current_lat, current_lon} /* position to be converted */);
+    std::array<double, 2> cartesianPosition = wgs84::toCartesian({current_lat, current_lon}, {52.33729417, 21.11272004} /* reference position */
+//    std::array<double, 2> cartesianPosition = wgs84::toCartesian({52.33728224, 21.11261589} /* reference position */,
+                                                                  );
 
+    float yaw_ned_rad = current_messages.attitude.yaw;
+    float yaw_ned_deg = yaw_ned_rad * 180 / M_PI;
+
+    double y_rel_pos_ned_m = -cartesianPosition[1];
     double x_rel_pos_ned_m = cartesianPosition[0];
-    double y_rel_pos_ned_m = cartesianPosition[1];
-
+//TODO if distance is from ass, skip frame
     //TODO if lat is S and/or lon is W consider sign
-    float angle_x_rad = atan(x_rel_pos_ned_m / alt_m);
-    float angle_y_rad = atan(y_rel_pos_ned_m / alt_m);
+
+//    float angle_x_rad = atan(x_rel_pos_ned_m / alt_m);
+//    float angle_y_rad = atan(y_rel_pos_ned_m / alt_m);
+
+    float rot_angle = 0;
+    // calculate small rotation vector
+
+    //TODO tymczsaowo wykom
+    //    rot_angle = yaw_ned_rad;// * M_PI / 180;
+    float rot_angle_ang = rot_angle * M_PI / 180;
+    float rotated_x = x_rel_pos_ned_m * cos(rot_angle) + y_rel_pos_ned_m * sin(rot_angle);
+    float rotated_y = -x_rel_pos_ned_m * sin(rot_angle) + y_rel_pos_ned_m * cos(rot_angle);
+
+    //orignal
+    float angle_x_rad = atan(rotated_x / alt_m);
+    float angle_y_rad = atan(rotated_y / alt_m);
+
+//    float angle_x_rad = -1 * M_PI / 180;
+//    float angle_y_rad = 0;
 
     float angle_x_deg = angle_x_rad * 180 / M_PI;
     float angle_y_deg = angle_y_rad * 180 / M_PI;
+
 
     float xx = current_messages.local_position_ned.x;
     float yy = current_messages.local_position_ned.y;
     float zz = current_messages.local_position_ned.z;
 
-    lt.time_usec = (uint32_t) (get_time_usec() / 1000);
+
+    float dist = sqrt(x_rel_pos_ned_m * x_rel_pos_ned_m + y_rel_pos_ned_m * y_rel_pos_ned_m + alt_m * alt_m);
+//TODO TMP
+//    dist = alt_m;
+
+    lt.time_usec = (uint32_t) (get_time_usec() );
     lt.target_num = 0;
     lt.frame = MAV_FRAME_LOCAL_NED;
-    //TODO calculate
-    float dist = alt_m;
     lt.distance = dist;
-    lt.angle_x = 1;
-    lt.angle_y = 1;
+    lt.angle_x = angle_x_rad;
+    lt.angle_y = angle_y_rad;
     lt.type = LANDING_TARGET_TYPE_VISION_OTHER;
 
     lt.position_valid = 1;
@@ -188,12 +224,16 @@ void Autopilot_Interface::send_beacon_pos() {
 
     // do the write
     int len = write_message(message);
-
+//int len  =1 ;
     // check the write
-    if ( len <= 0 )
-        fprintf(stderr,"WARNING: could not send LANDING_TARGET \n");
-    	else
-    		printf("%lu LANDING_TARGET  = [ %f , x ang: %f , y ang: %f, dist: %f ] \n", write_count, angle_x_deg, angle_y_deg, lt.distance);
+    if ( len <= 0 ) {
+        fprintf(stderr, "WARNING: could not send LANDING_TARGET \n");
+    } else {
+        printf("%lu LT [yaw %f, x %f, y %f], L[x %f, y %f] [x ang: %f , y ang: %f, dist: %f ] \n", write_count,
+               yaw_ned_deg, xx, yy,
+               x_rel_pos_ned_m, y_rel_pos_ned_m,
+               angle_x_deg, angle_y_deg, lt.distance);
+    }
 
     return;
 }
@@ -408,7 +448,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_HEARTBEAT:
 				{
-					printf("MAVLINK_MSG_ID_HEARTBEAT\n");
+//					printf("MAVLINK_MSG_ID_HEARTBEAT\n");
 					mavlink_msg_heartbeat_decode(&message, &(current_messages.heartbeat));
 					current_messages.time_stamps.heartbeat = get_time_usec();
 					this_timestamps.heartbeat = current_messages.time_stamps.heartbeat;
@@ -417,7 +457,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_SYS_STATUS:
 				{
-					printf("MAVLINK_MSG_ID_SYS_STATUS\n");
+//					printf("MAVLINK_MSG_ID_SYS_STATUS\n");
 					mavlink_msg_sys_status_decode(&message, &(current_messages.sys_status));
 					current_messages.time_stamps.sys_status = get_time_usec();
 					this_timestamps.sys_status = current_messages.time_stamps.sys_status;
@@ -426,7 +466,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_BATTERY_STATUS:
 				{
-					printf("MAVLINK_MSG_ID_BATTERY_STATUS\n");
+//					printf("MAVLINK_MSG_ID_BATTERY_STATUS\n");
 					mavlink_msg_battery_status_decode(&message, &(current_messages.battery_status));
 					current_messages.time_stamps.battery_status = get_time_usec();
 					this_timestamps.battery_status = current_messages.time_stamps.battery_status;
@@ -435,7 +475,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_RADIO_STATUS:
 				{
-					printf("MAVLINK_MSG_ID_RADIO_STATUS\n");
+//					printf("MAVLINK_MSG_ID_RADIO_STATUS\n");
 					mavlink_msg_radio_status_decode(&message, &(current_messages.radio_status));
 					current_messages.time_stamps.radio_status = get_time_usec();
 					this_timestamps.radio_status = current_messages.time_stamps.radio_status;
@@ -444,7 +484,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_LOCAL_POSITION_NED:
 				{
-					printf("MAVLINK_MSG_ID_LOCAL_POSITION_NED\n");
+//					printf("MAVLINK_MSG_ID_LOCAL_POSITION_NED\n");
 					mavlink_msg_local_position_ned_decode(&message, &(current_messages.local_position_ned));
 					current_messages.time_stamps.local_position_ned = get_time_usec();
 					this_timestamps.local_position_ned = current_messages.time_stamps.local_position_ned;
@@ -453,7 +493,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
 				{
-					printf("MAVLINK_MSG_ID_GLOBAL_POSITION_INT\n");
+//					printf("MAVLINK_MSG_ID_GLOBAL_POSITION_INT\n");
 					mavlink_msg_global_position_int_decode(&message, &(current_messages.global_position_int));
 					current_messages.time_stamps.global_position_int = get_time_usec();
 					this_timestamps.global_position_int = current_messages.time_stamps.global_position_int;
@@ -462,7 +502,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED:
 				{
-					printf("MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED\n");
+//					printf("MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED\n");
 					mavlink_msg_position_target_local_ned_decode(&message, &(current_messages.position_target_local_ned));
 					current_messages.time_stamps.position_target_local_ned = get_time_usec();
 					this_timestamps.position_target_local_ned = current_messages.time_stamps.position_target_local_ned;
@@ -471,7 +511,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_POSITION_TARGET_GLOBAL_INT:
 				{
-					printf("MAVLINK_MSG_ID_POSITION_TARGET_GLOBAL_INT\n");
+//					printf("MAVLINK_MSG_ID_POSITION_TARGET_GLOBAL_INT\n");
 					mavlink_msg_position_target_global_int_decode(&message, &(current_messages.position_target_global_int));
 					current_messages.time_stamps.position_target_global_int = get_time_usec();
 					this_timestamps.position_target_global_int = current_messages.time_stamps.position_target_global_int;
@@ -480,7 +520,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_HIGHRES_IMU:
 				{
-					printf("MAVLINK_MSG_ID_HIGHRES_IMU\n");
+//					printf("MAVLINK_MSG_ID_HIGHRES_IMU\n");
 					mavlink_msg_highres_imu_decode(&message, &(current_messages.highres_imu));
 					current_messages.time_stamps.highres_imu = get_time_usec();
 					this_timestamps.highres_imu = current_messages.time_stamps.highres_imu;
@@ -489,7 +529,7 @@ read_messages()
 
 				case MAVLINK_MSG_ID_ATTITUDE:
 				{
-					printf("MAVLINK_MSG_ID_ATTITUDE\n");
+//					printf("MAVLINK_MSG_ID_ATTITUDE\n");
 					mavlink_msg_attitude_decode(&message, &(current_messages.attitude));
 					current_messages.time_stamps.attitude = get_time_usec();
 					this_timestamps.attitude = current_messages.time_stamps.attitude;
@@ -497,7 +537,7 @@ read_messages()
 				}
 
 			    case MAVLINK_MSG_ID_SYSTEM_TIME:
-                    printf("MAVLINK_MSG_ID_SYSTEM_TIME\n");
+//                    printf("MAVLINK_MSG_ID_SYSTEM_TIME\n");
                     mavlink_msg_system_time_decode(&message, &(current_messages.system_time));
                     this_timestamps.system_time = current_messages.time_stamps.system_time;
                     break;
@@ -506,7 +546,7 @@ read_messages()
 
 				default:
 				{
-					 printf("Warning, did not handle message id %i\n",message.msgid);
+//					 printf("Warning, did not handle message id %i\n",message.msgid);
 					break;
 				}
 

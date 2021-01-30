@@ -169,14 +169,14 @@ top (int argc, char **argv)
     autopilot_interface.request_mavlink_rates();
 
 
-    sleep(10);
+    sleep(4);
 
-    for (int i =0; i < 100; i++) {
+    for (int i =0; i < 100000; i++) {
 
         autopilot_interface.send_beacon_pos();
 
-        sleep(1);
-//        usleep(100000);
+//        sleep(1);
+        usleep(50000);
     }
 
 	// --------------------------------------------------------------------------
