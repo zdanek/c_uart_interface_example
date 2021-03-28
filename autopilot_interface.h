@@ -281,6 +281,7 @@ public:
 	void send_beacon_pos();
 
     void request_mavlink_rates();
+    void request_mavlink_msg_interval();
 	int	 arm_disarm( bool flag );
     int set_mode(int mode);
     int takeoff(int altitude) ;
@@ -310,7 +311,9 @@ private:
 		mavlink_set_position_target_local_ned_t data;
 	} current_setpoint;
 
-	void read_thread();
+    int send_message_interval_rate_req(uint16_t msg_id, uint16_t interval_us);
+
+    void read_thread();
 	void write_thread(void);
 
 	int toggle_offboard_control( bool flag );

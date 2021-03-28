@@ -166,7 +166,8 @@ top (int argc, char **argv)
 //	test_takeoff(autopilot_interface);
 
 //	commands(autopilot_interface, autotakeoff);
-    autopilot_interface.request_mavlink_rates();
+//    autopilot_interface.request_mavlink_rates();
+    autopilot_interface.request_mavlink_msg_interval();
 
 
     sleep(4);

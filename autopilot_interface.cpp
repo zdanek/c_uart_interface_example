@@ -254,6 +254,32 @@ void Autopilot_Interface::request_mavlink_rates() {
     }
 }
 
+void Autopilot_Interface::request_mavlink_msg_interval() {
+    this->send_message_interval_rate_req(MAVLINK_MSG_ID_GLOBAL_POSITION_INT, 10000);
+    this->send_message_interval_rate_req(MAVLINK_MSG_ID_ATTITUDE, 10000);
+}
+
+int Autopilot_Interface::send_message_interval_rate_req(uint16_t msg_id, uint16_t interval_us) {
+
+    mavlink_command_long_t com = { 0 };
+    com.target_system    = system_id;
+    com.target_component = autopilot_id;
+    com.command          = MAV_CMD_SET_MESSAGE_INTERVAL;
+    com.confirmation     = 0;
+    com.param1           = msg_id;
+    com.param2           = interval_us;
+
+    // Encode
+    mavlink_message_t message;
+    mavlink_msg_command_long_encode(system_id, companion_id, &message, &com);
+
+    // Send the message
+    int len = port->write_message(message);
+
+    // Done!
+    return len;
+}
+
 // choose one of the next three
 
 /*
@@ -442,6 +468,8 @@ read_messages()
 			current_messages.sysid  = message.sysid;
 			current_messages.compid = message.compid;
 
+//            printf("Rcv :%d\n", message.msgid);
+
 			// Handle Message ID
 			switch (message.msgid)
 			{
@@ -561,11 +589,11 @@ read_messages()
 //				this_timestamps.battery_status             &&
 //				this_timestamps.radio_status               &&
 //				this_timestamps.local_position_ned         &&
-//				this_timestamps.global_position_int        &&
+				this_timestamps.global_position_int        &&
 //				this_timestamps.position_target_local_ned  &&
 //				this_timestamps.position_target_global_int &&
 //				this_timestamps.highres_imu                &&
-//				this_timestamps.attitude                   &&
+				this_timestamps.attitude                   &&
 				this_timestamps.sys_status
 				;
 
